@@ -1,0 +1,268 @@
+import tkinter as tk
+from tkinter import messagebox
+from tkcalendar import DateEntry
+from datetime import datetime
+import json
+#import requests
+
+class TransportFormApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Cadastro de CTe")
+        self.container = tk.Frame(root)
+        self.container.pack(padx=50, pady=50)
+
+        self.title = tk.Label(self.container, text="Dados de Transporte", font=("Arial", 16))
+        self.title.grid(row=0, column=0, columnspan=2, pady=10)
+        
+        self.create_label_entry("Codigo de Barras:", 1, tk.StringVar, "cod_barras_var", bind_func=self.preencher_numero_cte)
+        self.create_label_entry("Numero de Cte:", 2, tk.StringVar, "num_cte_var")
+        self.create_label_entry("Remetente:", 3, tk.StringVar, "remetente_var")
+        self.create_label_entry("Destinatario:", 4, tk.StringVar, "dest_var")
+        self.create_label_entry("Motorista:", 5, tk.StringVar, "motorista_var")
+        self.create_label_entry("Placa:", 6, tk.StringVar, "placa_var", bind_func=self.preenchimento_placa)
+        self.create_label_entry("Data de Saida:", 7, tk.StringVar, "data_saida_var", default=datetime.now().strftime('%d/%m/%Y'), readonly=True)
+        
+        self.confirm_var = tk.BooleanVar()
+        self.confirm_checkbox = tk.Checkbutton(self.container, text="Confirmar Entrega", variable=self.confirm_var, command=self.mostrar_data_entrega)
+        self.confirm_checkbox.grid(row=9, column=0, columnspan=3, pady=5)
+        self.confirm_checkbox.grid_remove()
+
+        self.create_date_entry("Data de Entrega:", 10)
+        self.entry_data_entrega.grid_remove()
+
+        self.cadastrar_button = tk.Button(self.container, text="Cadastrar", command=self.cadastrar)
+        self.cadastrar_button.grid(row=11, column=0, pady=10)
+        
+        self.consultar_button = tk.Button(self.container, text="Consultar CTe", command=self.consultar)
+        self.consultar_button.grid(row=11, column=1, pady=10)
+        
+        self.limpar_campos_button=tk.Button(self.container,text="Limpar Dados",command=self.limpar_campos)
+        self.limpar_campos_button.grid(row=11,column=2,pady=10)
+
+        self.atualizar_button=tk.Button(self.container,text="Atualizar",command=self.atualizar)
+        self.atualizar_button.grid(row=11, column=2, pady=10)
+        self.atualizar_button.grid_remove()
+
+    def create_label_entry(self, label_text, row, var_type, var_name, trace_func=None, bind_func=None, default=None, readonly=False):
+        label = tk.Label(self.container, text=label_text)
+        label.grid(row=row, column=0, sticky=tk.W, pady=5)
+
+        var = var_type()
+        entry = tk.Entry(self.container, textvariable=var)
+        setattr(self, var_name, var)
+
+        if trace_func:
+            getattr(self, var_name).trace_add('write', lambda *args: trace_func())
+
+        if bind_func:
+            entry.bind('<Return>', bind_func)
+
+        if default:
+            entry.insert(0, default)
+
+        if readonly:
+            entry.config(state='readonly')
+
+        entry.grid(row=row, column=1, pady=5)
+        setattr(self, f'entry_{label_text.lower().replace(" ", "_").replace(":", "").replace("-", "_")}', entry)
+
+    def create_date_entry(self, label_text, row):
+        label = tk.Label(self.container, text=label_text)
+        label.grid(row=row, column=0, sticky=tk.W, pady=5)
+        
+        self.data_entrega_var = tk.StringVar()
+        self.entry_data_entrega = DateEntry(self.container, textvariable=self.data_entrega_var, date_pattern='dd/MM/yyyy')
+        self.entry_data_entrega.grid(row=row, column=1, pady=5)
+
+    def preencher_numero_cte(self, event=None):
+        cod_barras = self.cod_barras_var.get().strip()
+        if len(cod_barras) == 44:
+            num_cte = cod_barras[25:34].lstrip('0')
+            self.num_cte_var.set(num_cte)
+        else:
+            messagebox.showerror("Erro", "Codigo de barras invalido. Deve conter 44 digitos.")
+
+   
+    def preenchimento_placa(self, *args):
+        placa = self.placa_var.get().upper().replace("-", "")
+        if len(placa) > 3:
+            placa = placa[:3] + '-' + placa[3:]
+            self.placa_var.set(placa[:8])
+
+    def consultar(self, event=None):
+        num_cte = self.num_cte_var.get().strip()
+        if not num_cte:
+            messagebox.showerror("Erro", "Numero do CTe nao pode estar vazio.")
+            return
+
+        try:
+            with open("dados_cte.json", "r") as f:
+                dados = json.load(f)
+        except FileNotFoundError:
+            messagebox.showinfo("Consultar", "Nenhum dado cadastrado.")
+            return
+        except json.JSONDecodeError:
+            messagebox.showerror("Consultar", "Erro ao ler dados do arquivo.")
+            return
+
+        for item in dados:
+            if item.get("numero_cte") == num_cte:
+                self.carregar_dados(item)
+                return
+        
+        messagebox.showinfo("Consultar", "CTe nao encontrado.")
+
+
+
+    def cadastrar(self):
+        if not self.campos_preenchidos():
+            messagebox.showerror("Cadastro", "Preencha todos os campos obrigatorios.")
+            return
+        
+        dados = {
+            "codigo_barras": self.cod_barras_var.get(),
+            "numero_cte": self.num_cte_var.get(),
+            "remetente": self.remetente_var.get(),
+            "destinatario": self.dest_var.get(),
+            "placa": self.placa_var.get(),
+             "morotista":self.motorista_var.get(),
+            "data_saida": self.data_saida_var.get(),
+            "data_entrega": self.data_entrega_var.get() if self.confirm_var.get() else "",
+            "confirmar_entrega": self.confirm_var.get()
+        }
+
+        try:
+            try:
+                with open("dados_cte.json", "r") as f:
+                    existing_data = json.load(f)
+            except FileNotFoundError:
+                existing_data = []
+
+            existing_data.append(dados)
+
+            with open("dados_cte.json", "w") as f:
+                json.dump(existing_data, f, indent=4)
+
+            messagebox.showinfo("Cadastrar", "Dados cadastrados com sucesso!")
+            self.limpar_campos()
+        except IOError:
+            messagebox.showerror("Cadastrar", "Erro ao salvar dados no arquivo.")
+
+    def carregar_dados(self, dados):
+        self.cod_barras_var.set(dados["codigo_barras"])
+        self.num_cte_var.set(dados["numero_cte"])
+        self.remetente_var.set(dados["remetente"])
+        self.dest_var.set(dados["destinatario"])
+        self.placa_var.set(dados['placa'])
+        self.motorista_var.set(dados['nome'])
+        self.data_saida_var.set(dados["data_saida"])
+        self.data_entrega_var.set(dados["data_entrega"])
+        self.confirm_var.set(dados["confirmar_entrega"])
+        #self.atualizar_button.grid()
+
+        self.confirm_checkbox.grid()
+        if dados["confirmar_entrega"]:
+            self.entry_data_entrega.grid()
+            self.entry_Codigo_de_barras.config(state='readonly')
+            self.entry_Numero_de_cte.config(state='readonly')
+            self.entry_remetente.config(state='readonly')
+            self.entry_destinatario.config(state='readonly')
+            self.entry_data_de_saida.config(state='readonly')
+            self.entry_data_de_entrega.config(state='readonly')
+            self.confirm_checkbox.config(state='disabled')
+            self.cadastrar_button.config(state='disabled')
+        else:
+            self.entry_codigo_de_barras.config(state='normal')
+            self.entry_numero_de_cte.config(state='normal')
+
+            self.entry_remetente.config(state='normal')
+            self.entry_destinatario.config(state='normal')
+            self.entry_placa.config(state='normal')
+            self.entry_data_de_saida.config(state='normal')
+            self.entry_data_entrega.config(state='normal')
+            self.confirm_checkbox.config(state='normal')
+            self.cadastrar_button.config(state='normal')
+
+        self.cadastrar_button.config(text="Atualizar", command=self.atualizar)
+
+    def atualizar(self):
+        if not self.campos_preenchidos():
+            messagebox.showerror("Atualizar", "Preencha todos os campos obrigatorios.")
+            return
+        
+        dados = {
+            "codigo_barras": self.cod_barras_var.get(),
+            "numero_cte": self.num_cte_var.get(),
+            "remetente": self.remetente_var.get(),
+            "destinatario": self.dest_var.get(),
+            "placa": self.placa_var.get(),
+            "data_saida": self.data_saida_var.get(),
+            "data_entrega": self.data_entrega_var.get(),
+            "confirmar_entrega": self.confirm_var.get()
+        }
+
+        try:
+            with open("dados_cte.json", "r") as f:
+                existing_data = json.load(f)
+
+            updated_data = []
+            for item in existing_data:
+                if item["numero_cte"] == dados["numero_cte"]:
+                    updated_data.append(dados)
+                else:
+                    updated_data.append(item)
+
+            with open("dados_cte.json", "w") as f:
+                json.dump(updated_data, f, indent=4)
+
+            messagebox.showinfo("Atualizar", "Dados atualizados com sucesso!")
+            self.limpar_campos()
+            self.cadastrar_button.config(text="Cadastrar", command=self.cadastrar)
+            self.confirm_checkbox.grid_remove()
+            self.entry_data_entrega.grid_remove()
+        except IOError:
+            messagebox.showerror("Atualizar", "Erro ao salvar dados no arquivo.")
+
+    def limpar_campos(self):
+        self.cod_barras_var.set("")
+        self.num_cte_var.set("")
+        self.remetente_var.set("")
+        self.dest_var.set("")
+        self.motorista_var.set("")
+        self.placa_var.set("")
+        self.data_saida_var.set("")
+        self.data_entrega_var.set("")
+        self.confirm_var.set(False)
+
+    def mostrar_data_entrega(self):
+        if self.confirm_var.get():
+            self.entry_data_entrega.grid()
+            self.entry_data_entrega.bind('<FocusOut>', self.formatar_data_entrega)
+        else:
+            self.entry_data_entrega.grid_remove()
+            self.entry_data_entrega.unbind('<FocusOut>')
+
+    def campos_preenchidos(self):
+        required_fields = [
+            self.cod_barras_var.get(),
+            self.num_cte_var.get(),
+            self.remetente_var.get(),
+            self.dest_var.get(),
+            self.placa_var.get(),
+            self.data_saida_var.get()
+        ]
+        return all(required_fields)
+    def formatar_data_entrega(self, event=None):
+        data = self.data_entrega_var.get().strip()
+        try:
+            # Tenta converter a data para o formato dd/mm/aaaa
+            data_formatada = datetime.strptime(data, '%d/%m/%Y').strftime('%d/%m/%Y')
+            self.data_entrega_var.set(data_formatada)
+        except ValueError:
+            messagebox.showerror("Erro", "Data de entrega inválida. Use o formato dd/mm/aaaa.")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = TransportFormApp(root)
+    root.mainloop()
